@@ -1,0 +1,18 @@
+{
+    "name": "abasovm/snmp-server",
+    "description": "snmp-service",
+    "authors": [
+        {
+            "name": "Abasov Maikl",
+            "email": "abasov.m@basis-plus.ru"
+        }
+    ],
+    "require": {
+	    "php-amqplib/php-amqplib" : ">=2.6.1"
+	},
+	"autoload": {
+		"psr-4": {
+          "Src\\App\\": "src/app"
+		}
+	}
+}
