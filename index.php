@@ -14,8 +14,8 @@ use Src\App\SNMPController;
 
 try {
 
-    $configs    = getConfig();
-    $rabbitConf = $configs['rabbit'];
+    $config     = getConfig();
+    $rabbitConf = $config['rabbit'];
 
     $rabbitMqConnect = new AMQPStreamConnection($rabbitConf['host'],
                                                 $rabbitConf['port'],
@@ -23,12 +23,13 @@ try {
                                                 $rabbitConf['password']);
 
     $main   = new SNMPController($rabbitMqConnect);
+    // lg($main);
     // $result = $main->walk(true);
     echo "Start-" . date('d.m.Y H:i:s') . "\n\n";
-    $result = $main->walk();
+    $result = $main->run();
     echo "Finish-" . date('d.m.Y H:i:s') . "\n\n";
-    // lg($result);
-    echo 'Snmp-Ok';
+    echo "\n\n" . '------- SNMP-OK ------'. "\n\n";
+    lg($result);
 
 } catch(\Exception $e){
     lg($e->getMessage());

@@ -32,20 +32,34 @@ class SNMPController {
          return false;
     }
 
+    public function run($while = false){
+        // $this->getRabbitInfo($while = false);
+
+        $this->addMessageRabbit('maikl add new message');
+    }
+
     public function walk($while = false) {
 
-        $this->getRabbitInfo($while)
-        //lg($this);
-        //die($this->port);
+        // $this->getRabbitInfo($while)
+        // lg($this);
+        // die($this->port);
+
+        // $this->port = '167';
+        // $this->ipAddress = '192.168.2.184';
 
         $port   = $this->port;
         $ip     = $this->ipAddress;
+        // die($ip);
         $result = snmpwalk($ip, "public", "");
 
         $date = date('d_m_Y___H_i_s');
         $fileName = $this->messageId . '--' .$date. ' --log.txt';
         $message  = $this->message;
         $this->logger($message, $fileName);
+
+        echo "\n" . "[*] SaveInfo Ok {$ip}" . "\n";
+
+        print_r($result);
 
         return $result;
     }
@@ -59,6 +73,8 @@ class SNMPController {
 
     public function getRabbitInfo($while = false) {
 
+        // die('5677');
+
         $connection = $this->rabbit;
         $channel    = $connection->channel();
 
@@ -70,6 +86,9 @@ class SNMPController {
         $callbackInfoProcessing = function($message) {
             $this->rabbitMessageProcessing($message);
             echo " [x] Received ", $message->body, "\n";
+
+            //$channel->close();
+            //$connection->close();
         };
 
         //Уходим слушать сообщения из очереди в бесконечный цикл
@@ -82,6 +101,8 @@ class SNMPController {
         } else {  // Одно выполнение
             $channel->wait();
         }
+
+        // $channel->wait();
 
         // Не забываем закрыть соединение и канал
         $channel->close();
@@ -99,6 +120,8 @@ class SNMPController {
         $this->port      = $this->isValue($data, 2);
         $this->type      = $this->isValue($data, 3);
 
+        $this->walk();
+
         return true;
     }
 
@@ -108,15 +131,17 @@ class SNMPController {
 
         //Берем канал и декларируем в нем новую очередь, первый аргумент - название
         $channel = $connection->channel();
-        $channel->queue_declare(QUEUE_NAME, false, false, false, false);
+        // $channel->queue_declare(QUEUE_NAME, false, false, false, false);
 
         //Создаем новое сообщение
         $msg = new AMQPMessage($newMessage);
         
         //Отправляем его в очередь
-        $channel->basic_publish($msg, '', 'hello');
+        // $channel->basic_publish($msg, '', 'hello');
 
         echo " [x] Sent 'Hello World!'\n";
+
+        $channel->basic_publish(new AMQPMessage(' 192.168.2.184 161 SNMP 78999'), '', 'SNMP_QUEUE');
 
         //Не забываем закрыть канал и соединение
         $channel->close();
