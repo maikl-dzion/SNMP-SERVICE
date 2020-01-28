@@ -33,9 +33,8 @@ class SNMPController {
     }
 
     public function run($while = false){
-        // $this->getRabbitInfo($while = false);
-
-        $this->addMessageRabbit('maikl add new message');
+        $this->getRabbitInfo($while = false);
+        // $this->addMessageRabbit('maikl add new message');
     }
 
     public function walk($while = false) {
@@ -49,7 +48,6 @@ class SNMPController {
 
         $port   = $this->port;
         $ip     = $this->ipAddress;
-        // die($ip);
         $result = snmpwalk($ip, "public", "");
 
         $date = date('d_m_Y___H_i_s');
@@ -59,7 +57,7 @@ class SNMPController {
 
         echo "\n" . "[*] SaveInfo Ok {$ip}" . "\n";
 
-        print_r($result);
+        print_r($result); die;
 
         return $result;
     }
@@ -73,8 +71,6 @@ class SNMPController {
 
     public function getRabbitInfo($while = false) {
 
-        // die('5677');
-
         $connection = $this->rabbit;
         $channel    = $connection->channel();
 
@@ -86,7 +82,6 @@ class SNMPController {
         $callbackInfoProcessing = function($message) {
             $this->rabbitMessageProcessing($message);
             echo " [x] Received ", $message->body, "\n";
-
             //$channel->close();
             //$connection->close();
         };
@@ -99,7 +94,7 @@ class SNMPController {
                 $channel->wait();
             }
         } else {  // Одно выполнение
-            $channel->wait();
+            // $channel->wait();
         }
 
         // $channel->wait();
@@ -112,8 +107,7 @@ class SNMPController {
     protected function rabbitMessageProcessing($message){
         //if($message) return false;
 
-        $body = $message->body;
-        $this->message = $body;
+        $body = $this->message = $message->body;
         $data = $this->messages  = explode(' ', $body);
         $this->messageId = $this->isValue($data, 0);
         $this->ipAddress = $this->isValue($data, 1);
@@ -125,6 +119,20 @@ class SNMPController {
         return true;
     }
 
+    public function addMessage(string $newMessage = '') {
+
+//        $messageId = 1;
+//        if(!empty($_SESSION['message_id'])) {
+//            $_SESSION['message_id']++;
+//            $messageId = $_SESSION['message_id'];
+//        } else {
+//            $_SESSION['message_id'] = $messageId;
+//        }
+//        $newMessage = $messageId .' 192.168.2.184 161 SNMP';
+
+        $this->addMessageRabbit($newMessage);
+    }
+
     protected function addMessageRabbit($newMessage = '') {
 
         $connection = $this->rabbit;
@@ -134,14 +142,14 @@ class SNMPController {
         // $channel->queue_declare(QUEUE_NAME, false, false, false, false);
 
         //Создаем новое сообщение
-        $msg = new AMQPMessage($newMessage);
+        // $msg = new AMQPMessage($newMessage);
         
         //Отправляем его в очередь
         // $channel->basic_publish($msg, '', 'hello');
 
         echo " [x] Sent 'Hello World!'\n";
 
-        $channel->basic_publish(new AMQPMessage(' 192.168.2.184 161 SNMP 78999'), '', 'SNMP_QUEUE');
+        $channel->basic_publish(new AMQPMessage($newMessage), '', QUEUE_NAME);
 
         //Не забываем закрыть канал и соединение
         $channel->close();

@@ -4,7 +4,7 @@
 //header('Access-Control-Allow-Origin: *');
 //header('Access-Control-Allow-Methods: GET, POST, OPTIONS, PUT, DELETE');
 //header('Access-Control-Allow-Headers: X-Requested-With, X-HTTP-Method-Override, Origin, Content-Type, Cookie, Accept');
-//header('Content-Type: text/html; charset=utf-8');
+header('Content-Type: text/html; charset=utf-8');
 
 // ГЛОБАЛЬНЫЕ КОНСТАНТЫ -----
 const QUEUE_NAME = 'SNMP_QUEUE';
@@ -76,7 +76,7 @@ function lg() {
 function error_log_handler($errno, $message, $filename, $line) {
     $date = date('Y-m-d H:i:s (T)');
     $fp   = fopen('error.txt', 'a');
-    if (!empty($fp)) {
+    if(!empty($fp)) {
 //        $filename  =str_replace(LOG_PATH,'', $filename);
 //        $err  = " $message = $filename = $line\r\n ";
 //        fwrite($fp, $err);
