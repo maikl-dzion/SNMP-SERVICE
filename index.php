@@ -6,6 +6,8 @@ ini_set('display_startup_errors', 1);
 
 session_start();
 
+declare(ticks=1);
+
 const ROOT_DIR = __DIR__;
 require_once ROOT_DIR . '/src/bootstrap.php';
 require_once ROOT_DIR . '/vendor/autoload.php';
@@ -27,24 +29,28 @@ try {
                                            $rabbitConf['user'],
                                            $rabbitConf['password']);
 
+
+    $main = new SNMPController($connection);
+    $main->run();
+
     // getMessages($connection);
     // addMessages($connection);
 
-    $channel = $connection->channel();
-    // $channel->queue_declare(QUEUE_NAME, false, false, false, false);
-//    echo " [*] Waiting for messages. To exit press CTRL+C\n";
-//    $readMessage = function (AMQPMessage $message) {
-//        // messageProcessing($message);
-//        echo ' [x] Received ', $message->body, "\n";
-//    };
-
-    // $channel->basic_consume(QUEUE_NAME, '', false, true, false, false, $readMessage);
-    $message = $channel->basic_get(QUEUE_NAME, true);
-    // $channel->wait();
-    snmpRun($message);
-
-    $channel->close();
-    $connection->close();
+//    $channel = $connection->channel();
+//    $channel->queue_declare(QUEUE_NAME, false, false, false, false);
+////    echo " [*] Waiting for messages. To exit press CTRL+C\n";
+////    $readMessage = function (AMQPMessage $message) {
+////        // messageProcessing($message);
+////        echo ' [x] Received ', $message->body, "\n";
+////    };
+//
+//    // $channel->basic_consume(QUEUE_NAME, '', false, true, false, false, $readMessage);
+//    $message = $channel->basic_get(QUEUE_NAME, true);
+//    // $channel->wait();
+//    snmpRun($message);
+//
+//    $channel->close();
+//    $connection->close();
 
     // print_r($r);
 
@@ -112,7 +118,7 @@ function snmpRun(AMQPMessage $message) {
 function logger($message, $ip, $result, $messageId = '') {
     $datetime = date('d_m_Y___H_i_s');
     $fileName =  $ip . '__id' . $messageId . '__' . $datetime . '__log.txt';
-    $path = LOGS_DIR . '/' . $fileName;
+    $path = LOG_DIR . '/' . $fileName;
     $content  = $message . "\n\n";
 
     foreach($result as $key => $value) {
