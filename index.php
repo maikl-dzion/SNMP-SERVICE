@@ -29,7 +29,7 @@ try {
     $result = $main->run();
     echo "Finish-" . date('d.m.Y H:i:s') . "\n\n";
     echo "\n\n" . '------- SNMP-OK ------'. "\n\n";
-    lg($result);
+    // lg($result);
 
 } catch(\Exception $e){
     lg($e->getMessage());
