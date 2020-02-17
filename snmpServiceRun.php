@@ -16,9 +16,7 @@ use PhpAmqpLib\Connection\AMQPStreamConnection;
 use PhpAmqpLib\Message\AMQPMessage;
 use Src\App\SNMPController;
 
-echo "\n\n ---------------------------------------------------- \n";
-echo "     ---  Start=" . date('d.m.Y H:i:s') . "   ---  ";
-echo "\n  ---------------------------------------------------- \n\n";
+_echo('Start');
 
 try {
 
@@ -33,20 +31,24 @@ try {
                     $rabbitConfig['password']);
 
     $main = new SNMPController($connect, $sendApiConfig, LOG_DIR);
-
     $main->run();
 
-    echo "\n\n ---- ###########----  SNMP-OK  ----- ######### ----- \n\n";
-
 } catch(\Exception $e){
-
-    echo "\n\n ---- ###########----  SNMP-ERROR  ----- ######### ----- \n\n";
+    _echo('SNMP - ERROR');
     $errorMessage = $e->getMessage();
     lg($errorMessage);
-
 }
 
-echo "\n\n ---------------------------------------------------- \n";
-echo "      ---  Finish=" . date('d.m.Y H:i:s') . "  ---   ";
-echo "\n ---------------------------------------------------- \n\n";
+_echo('SNMP - OK');
+_echo('Finish');
 
+//////////////////////////////////
+///
+///
+
+
+function _echo($data) {
+    echo "\n\n ---------------------------------------------------- \n";
+    echo "      ---  {$data}=" . date('d.m.Y H:i:s') . "  ---   ";
+    echo "\n ---------------------------------------------------- \n\n";
+}
