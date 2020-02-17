@@ -22,6 +22,20 @@ echo "\n ---------------------------------------------------- \n\n";
 
 try {
 
+//    $ip = '190.169.1.5';
+//
+//    $snmp = new SNMP(SNMP::VERSION_1, $ip, "public");
+//    $get_iod_temperature = $snmp->get("iso.3.6.1.2.1.7.5.1.2.0.0.0.0.8520");
+
+//    $session = new SNMP(SNMP::VERSION_1, "190.169.1.5", "public");
+//    // $results = $session->get();
+//    print_r($session);
+//    $session->close();
+
+//    $syscontact = snmp3_get("190.169.1.5", '', '', '',
+//                            '', '', '', '');
+    //lg($get_iod_temperature);
+
     $config      = getConfig();
     $rabbitConf  = $config['rabbit'];
     $sendApiConf = $config['send_data_api'];
@@ -30,9 +44,9 @@ try {
                                         $rabbitConf['port'],
                                         $rabbitConf['user'],
                                         $rabbitConf['password']);
-    // lg($connection);
 
     $main = new SNMPController($connect, $sendApiConf);
+
     $main->run();
 
     // $main->sendTest();

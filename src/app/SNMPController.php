@@ -21,17 +21,37 @@ class SNMPController {
 
         // print_r($message); die;
 
-        $data     = $this->snmpQuery($message);
+        $data  = $this->snmpQuery($message);
 
         // print_r($data); die;
-
-        $sendData = $this->dataFormatted($data);
-
+        // $sendData = $this->postDataFormatted($data, 'get');
         // print_r($sendData); die;
 
-        $this->sendData($sendData);
+        if(empty($data)) {
+            return false;
+        }
+
+        foreach ($data as $key => $item) {
+            $this->sendData($item);
+        }
 
         return true;
+    }
+
+    protected function postDataFormatted(array $data, $ip, $action = 'get') {
+
+        $results = array();
+
+        switch ($action) {
+            case 'get' :
+                $results = $this->getDataForm($data, $ip);
+               break;
+
+            case 'walk' :
+                $results = $this->walkDataForm($data);
+                break;
+        }
+        return $results;
     }
 
     protected function getMessage() : AMQPMessage {
@@ -47,7 +67,7 @@ class SNMPController {
         return $message;
     }
 
-    protected function snmpQuery(AMQPMessage $message) {
+    protected function snmpQuery(AMQPMessage $message, $action = 'get') {
 
         $content = $message->body;
         $item    = explode(' ', $content);
@@ -56,22 +76,44 @@ class SNMPController {
 
         $messageId = $this->isValue($item, 0);
         $ip   = trim($this->isValue($item, 1));
-        $port = $this->isValue($item, 2);
-        $type = $this->isValue($item, 3);
+        $oid  = trim($this->isValue($item, 2));
+        $port = $this->isValue($item, 3);
+        $type = $this->isValue($item, 4);
+
+        // $oid = 'iso.3.6.1.2.1.7.5.1.2.0.0.0.0.8520';
 
         $snmpData = array();
 
-        $data = $this->snmpWalk($ip);
+        if($oid != 'signal_in' &&
+           $oid != 'signal_out') {
+           $data = $this->snmpGet($ip, $oid);
+        } else {
+           $data = array(
+                'cmd'       => '',
+                'end_line'  => '',
+                'var_state' => '',
+                'data'      => array("{$oid} = INTEGER : " . rand(10, 50)),
+           );
+        }
 
-        if(isset($data['end_line']))
+        // print_r($data); die;
+
+        if(isset($data['end_line'])) {
             $logValue = $data['end_line'];
+        }
 
-        if(isset($data['data']))
-            $snmpData = $data['data'];
+        if(isset($data['data'])) {
+
+            $snmpData = $this->postDataFormatted($data['data'], $ip, $action);
+        }
 
         $this->_log('Snmp Walk - Ok', $logValue, __LINE__, __FUNCTION__);
 
-        $this->logger($content, $ip, $snmpData, $messageId);
+        foreach ($snmpData as $key => $item) {
+            $this->logger($content, $ip, $item, $messageId);
+        }
+
+        // print_r($snmpData); die;
 
         return $snmpData;
     }
@@ -79,16 +121,27 @@ class SNMPController {
     protected function snmpWalk($ip, $shema = 'public', $ver = '-v2c') {
         // snmpwalk -c public -v2c 192.168.2.184 iso.3.6.1.2.1.25.3.2.1.3.1
         // $data = snmpwalk($ip, "public", "");
-        $snmpCmd = "snmpwalk -c " .$shema. " " .$ver. " " . $ip;
-        return $this->commandRun($snmpCmd);
+        $snmpCommand = "snmpwalk -c " .$shema. " " .$ver. " " . $ip;
+        return $this->commandRun($snmpCommand);
+    }
+
+    protected function snmpGet($ip, $oid, $shema = 'public', $ver = '-v2c') {
+        // snmpwalk -c public -v2c 192.168.2.184 iso.3.6.1.2.1.25.3.2.1.3.1
+        // $data = snmpwalk($ip, "public", "");
+        $kill = ' & pid=$! && sleep 2 && kill -9 $pid';
+        $snmpCommand = "snmpget {$ver} -c {$shema}  {$ip} {$oid} " . $kill;
+        return $this->commandRun($snmpCommand);
+
     }
 
     protected function commandRun($cmd) {
+
         $output = array();
         $endLine = exec($cmd, $output, $returnVar);
+
         return array(
-            'end_line'  => $endLine,
             'cmd'       => $cmd,
+            'end_line'  => $endLine,
             'var_state' => $returnVar,
             'data'      => $output,
         );
@@ -109,7 +162,7 @@ class SNMPController {
 
         // $saveResult = file_put_contents($path, $content);
 
-        $this->_log('Save Log file , FaleName -' . $path, $saveResult, __LINE__, __FUNCTION__);
+        $this->_log('Save Log file , FileName -' . $path, $saveResult, __LINE__, __FUNCTION__);
 
         return $saveResult;
     }
@@ -119,22 +172,26 @@ class SNMPController {
 
         $host = $this->sendApiConf['host'];
         $port = $this->sendApiConf['port'];
+        $link = '/data/save';
 
-        $url = $host . ':' . $port;
+        $url = $host . ':' . $port . $link;
         $jsonData = json_encode($postData, JSON_UNESCAPED_UNICODE);
         $jsonErrorMsg  = json_last_error_msg();
         $this->_log('Send Data - Json Error', $jsonErrorMsg, __LINE__, __FUNCTION__);
+
+        // print_r($postData); print_r($jsonData); die;
 
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_POST, 1);
         curl_setopt($ch, CURLOPT_POSTFIELDS, $jsonData);
         curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
         $result = curl_exec($ch);
-        $info = curl_getinfo($ch);
+        $info   = curl_getinfo($ch);
         curl_close($ch);
 
         $this->_log('Send Json Data - Ok, Curl result -' . $result, $result , __LINE__, __FUNCTION__);
 
+        // print_r($result);  print_r($info);  print_r($jsonErrorMsg);
     }
 
     public function sendTest() {
@@ -145,7 +202,7 @@ class SNMPController {
 
     }
 
-    protected function dataFormatted(array $data) :array {
+    protected function walkDataForm(array $data) :array {
 
         $postData = array();
         // print_r($data); die;
@@ -180,6 +237,36 @@ class SNMPController {
         }
 
         // print_r($postData); die;
+
+        return $postData;
+    }
+
+    protected function getDataForm(array $data, string $ip) :array {
+
+        $postData = array();
+
+        foreach($data as $key => $values) {
+
+            $item = explode('=', $values);
+            $oid = trim($this->isValue($item, 0));
+            $param     = $this->isValue($item, 1);
+
+            $json = array(
+                'oid' => $oid,
+                'value' => '',
+                'ip'    => $ip,
+                'device_id' => 0,
+            );
+
+            if(!is_array($oid) && $oid) {
+                $_res = explode(':', $param);
+                if(!empty($_res[1])) {
+                    $json['value'] = (integer) trim($_res[1]);
+                }
+            }
+
+            $postData[] = $json;
+        }
 
         return $postData;
     }
