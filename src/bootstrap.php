@@ -12,12 +12,10 @@ const SRC_DIR    = ROOT_DIR . '/src';
 const CONFIG_DIR = SRC_DIR  . '/config';
 const LOG_DIR    = SRC_DIR  . '/log';
 
-const QUEUE_NAME = 'SNMP_QUEUE';
+const QUEUE_NAME        = 'SNMP_QUEUE';
 const RUN_COUNT_DEFAULT = 200;
 const SNMP_SCRIPT_NAME  = 'snmpServiceRun.php';
 
 include_once SRC_DIR . '/functions.php';
 
-// die(CONFIG_DIR . '/rabbit.php');
-// $rabbitConf = require_once CONFIG_DIR . '/rabbit.php';
 

@@ -8,34 +8,107 @@ use PhpAmqpLib\Message\AMQPMessage;
 class SNMPController {
 
     protected $rabbitConnect;
-    protected $sendApiConf;
+    protected $sendApiConfig;
+    protected $logPath;
+    const SEND_API_LINK = '/data/save';
 
-    public function __construct(AMQPStreamConnection $rabbit, $sendApiConf) {
+    public function __construct(AMQPStreamConnection $rabbit, array $sendApiConfig, string $logPath) {
         $this->rabbitConnect = $rabbit;
-        $this->sendApiConf   = $sendApiConf;
+        $this->sendApiConfig = $sendApiConfig;
+        $this->logPath = $logPath;
     }
 
-    public function run() {
+    protected function getMessageOfQueue() : AMQPMessage {
 
-        $message  = $this->getMessage();
+        $channel = $this->rabbitConnect->channel();
+        $channel->queue_declare(QUEUE_NAME, false, false, false, false);
+        $message = $channel->basic_get(QUEUE_NAME, true);
+        $channel->close();
+        $this->rabbitConnect->close();
 
-        // print_r($message); die;
-
-        $data  = $this->snmpQuery($message);
-
-        // print_r($data); die;
-        // $sendData = $this->postDataFormatted($data, 'get');
-        // print_r($sendData); die;
-
-        if(empty($data)) {
-            return false;
+        $logArray   = array('Line' => __LINE__, 'FuncName' => __FUNCTION__);
+        $logMessage = 'Сообщение из очереди получено - OK';
+        if(!empty($message->body)) {
+            $logArray['Data'] = $message->body;
+        } else {
+            $logMessage = 'Сообщение из очереди НЕ получено - ERROR';
         }
 
+        $this->logShow($logArray, $logMessage);
+
+        return $message;
+    }
+
+    public function run() : bool {
+
+        // -----------------------------
+        // Получаем сообщение из очереди  --- Тип PhpAmqpLib\Message\AMQPMessage
+        $message  = $this->getMessageOfQueue();
+
+        // -----------------------------
+        // Выполняем задание и обрабатываем данные
+        $data  = $this->snmpExecute($message);
+
+        $logArray  = array('Line' => __LINE__, 'FuncName' => __FUNCTION__, 'Data' => $data);
+        if(empty($data)) {
+            // $this->logShow($logArray, 'Сообщение НЕ удалось обработать - ERROR');
+            return false;
+        }
+        // $this->logShow($logArray, 'Сообщение успешно обработано - OK');
+
+        // -----------------------------
+        // Данные успешно обработаны, отправляем на сохранение
         foreach ($data as $key => $item) {
             $this->sendData($item);
         }
 
         return true;
+    }
+
+    protected function snmpExecute(AMQPMessage $message, $action = 'get') : array {
+
+        $content = $message->body;
+        $item    = explode(' ', $content);
+
+        $messageId = trim($this->isValue($item, 0));
+        $ip   = trim($this->isValue($item, 1));
+        $oid  = trim($this->isValue($item, 2));
+        $port = trim($this->isValue($item, 3));
+        $type = trim($this->isValue($item, 4));
+
+        if(!$ip) {
+            $logName = 'error/' . date('d.m.Y__H.i.s');
+            $logData = array('title' => 'Пустой Ip-адрес', 'data' => $message);
+            $this->saveLogger($logData, $logName , __FILE__, __LINE__);
+            return array();
+        }
+
+        $data = array(
+            'cmd'       => '',
+            'end_line'  => '',
+            'var_state' => '',
+            'data'      => array("{$oid} = INTEGER : " . rand(10, 50)),
+        );
+
+        if($oid != 'signal_in' && $oid != 'signal_out') {
+            $data = $this->snmpGet($ip, $oid);
+        }
+
+        if(empty($data['data'])) {
+            $logName  = 'error/' . $ip;
+            $logTitle = 'Сообщение НЕ получилось обработать - ERROR';
+            $logData  = array('title' => $logTitle, 'data' => array($data));
+            $this->saveLogger($logData, $logName , __FILE__, __LINE__);
+            $this->logShow($logData, $logTitle);
+            return array();
+        }
+
+        $logArray  = array('Line' => __LINE__, 'FuncName' => __FUNCTION__, 'Data' => $data['data']);
+        $this->logShow($logArray, 'Сообщение успешно обработано - OK');
+
+        $snmpData = $this->postDataFormatted($data['data'], $ip, $action);
+
+        return $snmpData;
     }
 
     protected function postDataFormatted(array $data, $ip, $action = 'get') {
@@ -45,93 +118,66 @@ class SNMPController {
         switch ($action) {
             case 'get' :
                 $results = $this->getDataForm($data, $ip);
-               break;
+                break;
 
             case 'walk' :
                 $results = $this->walkDataForm($data);
                 break;
         }
+
         return $results;
     }
 
-    protected function getMessage() : AMQPMessage {
-
-        $channel = $this->rabbitConnect->channel();
-        $channel->queue_declare(QUEUE_NAME, false, false, false, false);
-        $message = $channel->basic_get(QUEUE_NAME, true);
-        $channel->close();
-        $this->rabbitConnect->close();
-
-        $this->_log('Get message - Ok', $message->body, __LINE__, __FUNCTION__);
-
-        return $message;
-    }
-
-    protected function snmpQuery(AMQPMessage $message, $action = 'get') {
-
-        $content = $message->body;
-        $item    = explode(' ', $content);
-
-        // $data = snmpwalk('192.168.2.184', "public", "");
-
-        $messageId = $this->isValue($item, 0);
-        $ip   = trim($this->isValue($item, 1));
-        $oid  = trim($this->isValue($item, 2));
-        $port = $this->isValue($item, 3);
-        $type = $this->isValue($item, 4);
-
-        // $oid = 'iso.3.6.1.2.1.7.5.1.2.0.0.0.0.8520';
-
-        $snmpData = array();
-
-        if($oid != 'signal_in' &&
-           $oid != 'signal_out') {
-           $data = $this->snmpGet($ip, $oid);
-        } else {
-           $data = array(
-                'cmd'       => '',
-                'end_line'  => '',
-                'var_state' => '',
-                'data'      => array("{$oid} = INTEGER : " . rand(10, 50)),
-           );
-        }
-
-        // print_r($data); die;
-
-        if(isset($data['end_line'])) {
-            $logValue = $data['end_line'];
-        }
-
-        if(isset($data['data'])) {
-
-            $snmpData = $this->postDataFormatted($data['data'], $ip, $action);
-        }
-
-        $this->_log('Snmp Walk - Ok', $logValue, __LINE__, __FUNCTION__);
-
-        foreach ($snmpData as $key => $item) {
-            $this->logger($content, $ip, $item, $messageId);
-        }
-
-        // print_r($snmpData); die;
-
-        return $snmpData;
-    }
-
-    protected function snmpWalk($ip, $shema = 'public', $ver = '-v2c') {
+    protected function snmpWalk($ip, $shema = 'public', $ver = '-v2c') : array {
         // snmpwalk -c public -v2c 192.168.2.184 iso.3.6.1.2.1.25.3.2.1.3.1
         // $data = snmpwalk($ip, "public", "");
+        if(!$this->pingIp($ip))
+            return array();
         $snmpCommand = "snmpwalk -c " .$shema. " " .$ver. " " . $ip;
         return $this->commandRun($snmpCommand);
     }
 
-    protected function snmpGet($ip, $oid, $shema = 'public', $ver = '-v2c') {
+    protected function snmpGet($ip, $oid, $shema = 'public', $ver = '-v2c') : array {
         // snmpwalk -c public -v2c 192.168.2.184 iso.3.6.1.2.1.25.3.2.1.3.1
         // $data = snmpwalk($ip, "public", "");
-        $kill = ' & pid=$! && sleep 2 && kill -9 $pid';
+        // $ip = '192.168.2.45';
+
+        if(!$this->pingIp($ip))
+            return array();
+
+        $kill = ' & pid=$! && sleep 4 && kill -9 $pid';
         $snmpCommand = "snmpget {$ver} -c {$shema}  {$ip} {$oid} " . $kill;
         return $this->commandRun($snmpCommand);
 
+        //$snmpCommand = "snmpget {$ver} -c {$shema}  {$ip} {$oid}";
+        //return $this->commandRun($snmpCommand);
+    }
+
+    protected function pingIp(string $ip) {
+        $cmd = "ping -w 3 -c 3  {$ip}";
+        $result = $this->commandRun($cmd);
+        if(!empty($result['data'])) {
+            foreach ($result['data'] as $key => $value) {
+                if(!$this->_find($value, 'transmitted')) continue;
+                if($this->_find($value, '0 received')){
+                    $logName  = 'error/' . $ip;
+                    $logTitle = 'Ip-адрес недоступен - ERROR';
+                    $logData  = array('title' => $logTitle, 'data' => array($result));
+                    $this->saveLogger($logData, $logName , __FILE__, __LINE__);
+                    $this->logShow($logData, $logTitle);
+                }
+            }
+            return true;
+        }
+
+        return false;
+    }
+
+    protected function _find($source, $findValue) {
+        $pos = strrpos($source, $findValue);
+        if($pos === false)
+            return '';
+        return $source;
     }
 
     protected function commandRun($cmd) {
@@ -147,38 +193,50 @@ class SNMPController {
         );
     }
 
-    protected function logger(string $message, string $ip, $data = array(), $messageId = '') {
+//    protected function logger(string $message, string $ip, $data = array(), $messageId = '') {
+//
+//        $saveResult = '';
+//
+//        $datetime = date('d_m_Y___H_i_s');
+//        $fileName =  $ip . '__id_' . $messageId . '__' . $datetime . '__log.txt';
+//        $path     = LOG_DIR . '/' . $fileName;
+//        $content  = $message . "\n\n";
+//
+//        foreach($data as $key => $value) {
+//            $content .= $value . "\n";
+//        }
+//
+//        // $saveResult = file_put_contents($path, $content);
+//
+//        $this->_log('Save Log file , FaleName -' . $path, $saveResult, __LINE__, __FUNCTION__);
+//
+//        return $saveResult;
+//    }
 
-        $saveResult = '';
 
-        $datetime = date('d_m_Y___H_i_s');
-        $fileName =  $ip . '__id_' . $messageId . '__' . $datetime . '__log.txt';
-        $path     = LOG_DIR . '/' . $fileName;
-        $content  = $message . "\n\n";
+    protected function sendData(array $postData) : bool {
 
-        foreach($data as $key => $value) {
-            $content .= $value . "\n";
-        }
-
-        // $saveResult = file_put_contents($path, $content);
-
-        $this->_log('Save Log file , FileName -' . $path, $saveResult, __LINE__, __FUNCTION__);
-
-        return $saveResult;
-    }
-
-
-    protected function sendData(array $postData) {
-
-        $host = $this->sendApiConf['host'];
-        $port = $this->sendApiConf['port'];
-        $link = '/data/save';
+        $host = $this->sendApiConfig['host'];
+        $port = $this->sendApiConfig['port'];
+        $link = self::SEND_API_LINK;
 
         $url = $host . ':' . $port . $link;
         $jsonData = json_encode($postData, JSON_UNESCAPED_UNICODE);
         $jsonErrorMsg  = json_last_error_msg();
-        $this->_log('Send Data - Json Error', $jsonErrorMsg, __LINE__, __FUNCTION__);
 
+        $logArray  = array('Line' => __LINE__, 'FuncName' => __FUNCTION__);
+
+        if($jsonErrorMsg != 'No error') {
+            $logFileName = 'error/' . date('d.m.Y__H.i.s');
+            $logArray['Data'] = array('msg' => $jsonErrorMsg, 'post' => $postData, 'json' => $jsonData);
+            $logTitle = 'Произошла ошибка при отправке данных: json_last_error_msg';
+            $this->logShow($logArray, $logTitle);
+            $this->saveLogger($logArray['Data'], $logFileName , __FILE__, __LINE__);
+            return true;
+        }
+
+        // print_r($jsonErrorMsg); die;
+        // $this->_log('Send Data - Json Error', $jsonErrorMsg, __LINE__, __FUNCTION__);
         // print_r($postData); print_r($jsonData); die;
 
         $ch = curl_init($url);
@@ -189,9 +247,17 @@ class SNMPController {
         $info   = curl_getinfo($ch);
         curl_close($ch);
 
-        $this->_log('Send Json Data - Ok, Curl result -' . $result, $result , __LINE__, __FUNCTION__);
+        $logArray['Date'] = array('curl_result' => $result,
+                                  'curl_info'   => $info,
+                                  'post' => $postData,
+                                  'json' => $jsonData);
+        $logTitle = 'Сообщение успешно отправлено - ОК';
+        $this->logShow($logArray, $logTitle);
 
+        // $this->_log('Send Json Data - Ok, Curl result -' . $result, $result , __LINE__, __FUNCTION__);
         // print_r($result);  print_r($info);  print_r($jsonErrorMsg);
+
+        return true;
     }
 
     public function sendTest() {
@@ -221,13 +287,13 @@ class SNMPController {
                     $type  = trim($res[0]);
                     $param = 0;
                     if(!empty($res[1]))
-                       $param = trim($res[1]);
+                        $param = trim($res[1]);
                     // print_r($type); die;
                     switch ($type) {
                         case 'INTEGER' :
-                              $postData[$fieldName] = (integer)($param);
-                              // print_r($postData); die;
-                              break;
+                            $postData[$fieldName] = (integer)($param);
+                            // print_r($postData); die;
+                            break;
                     }
                 }
 
@@ -281,24 +347,69 @@ class SNMPController {
         return false;
     }
 
-    protected function _log($title, $data, $line, $funcName){
+    protected function logShow($data, string $title = ''){
+        $delimiter = "########################## ";
+        $logString = print_r($data, true);
+        if($title)
+            $logString = "[Title]:" . $title . PHP_EOL . $logString;
 
+        $logString = $delimiter . PHP_EOL .
+                     $logString . PHP_EOL .
+                     $delimiter . PHP_EOL;
+        print $logString;
+    }
+
+    protected function _log($title, $data, $line, $funcName){
         $s   = "";
         $del = "########################## ";
         $n   = "\n";
 
         $values = print_r($data, true);
-
         $log  = $s . 'Title:' . $title . $s . $n;
         $log .= $s . 'Data:'  . $values  . $s . $n;
         $log .= $s . 'Line:'  . $line  . $s . $n;
         $log .= $s . 'FuncName:'  . $funcName  . $s ;
-
         $log = $n . $n . $del. $n . $log .$n . $del .$n . $n;
         echo $log;
-
         return $log;
     }
+
+    protected function saveLogger(array $messages, string $logName = '', string $file = '', string $line = '') {
+
+        $logPath  = $this->logPath . '/';
+        $datetime = date('Y-m-d H:i:s');
+
+        $logHeader =  '[date]:' . $datetime . PHP_EOL
+                     .'[file_name]:'. $file . PHP_EOL
+                     .'[line]:'. $line . PHP_EOL;
+
+        $logData =    '################## --- START --- ##################'   . PHP_EOL
+                    . $logHeader . print_r($messages, true)   . PHP_EOL
+                    . '################## --- END --- ##################' . PHP_EOL;
+
+        if($logName)
+            $logPath .= $logName;
+        else
+            $logPath .= $datetime;
+
+        $logFileName = $logPath . '.log';
+
+        $r = file_put_contents($logFileName, $logData . PHP_EOL, FILE_APPEND);
+
+        return array(
+            'status' => $r,
+            'log_file_name' => $logFileName
+        );
+    }
+
+}
+
+
+
+
+
+
+
 
 //    protected function setParams() {
 //         $this->ipAddress = $this->isValue($this->params, 'ip');
@@ -435,5 +546,3 @@ class SNMPController {
 //        $path = LOGS_DIR . '/' . $fileName;
 //        return file_put_contents($path, $message);
 //    }
-
-}
